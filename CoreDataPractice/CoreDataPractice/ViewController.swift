@@ -2,105 +2,125 @@
 //  ViewController.swift
 //  CoreDataPractice
 //
-//  Created by 김윤홍 on 7/9/24.
+//  Created by 김윤홍 on 7/13/24.
 //
 
 import UIKit
-import CoreData
 
-class ViewController: UIViewController {
-  var container: NSPersistentContainer!
+class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSource {
+  
+  let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+  
+  private var models = [ToDoListItem]()
+  
+  var mainView: MainView!
+  override func loadView() {
+    mainView = MainView(frame: UIScreen.main.bounds)
+    self.view = mainView
+  }
   
   override func viewDidLoad() {
     super.viewDidLoad()
-    guard let phoneNumber = UserDefaults.standard.string(forKey: "phoneNumber") else {
-      print("저장된 전화 번호 없음")
-      return
-    }
-
-    let appDelegate = UIApplication.shared.delegate as! AppDelegate
-    self.container = appDelegate.persistentContainer
-    
-    createData(name: "Adam", phoneNumber: "010-1234-5678")
-    readData()
-    updateData(currentName: "Adam", udateName: "yunhong")
-    readData()
-    deleteData(name: "yunhong")
-    readData()
-    
+    self.title = "ToDoList"
+    getAllItems()
+    mainView.tableView.delegate = self
+    mainView.tableView.dataSource = self
+    mainView.tableView.register(tableViewCell.self, forCellReuseIdentifier: tableViewCell.identifier)
+    navigationItem.rightBarButtonItem = UIBarButtonItem(title: "+", style: .plain, target: self, action: #selector(buttonTapped))
   }
   
-  //=====================================================CoreDataPractice에 있는 데이터에 접근
-  
-  //CURD중 C
-  
-  func createData(name: String, phoneNumber: String) {
-    guard let entity = NSEntityDescription.entity(forEntityName: PhoneBook.className, in: self.container.viewContext)
-    else {return}
-    let newPhoneBook = NSManagedObject(entity: entity, insertInto: self.container.viewContext)
-    newPhoneBook.setValue(name, forKey: PhoneBook.Key.name)
-    newPhoneBook.setValue(phoneNumber, forKey: PhoneBook.Key.phoneNumber)
-    print(name, phoneNumber)
-    
-    do {
-      try self.container.viewContext.save()
-      print("create성공")
-    } catch {
-      print("실패")
-    }
+  @objc
+  func buttonTapped() {
+    let alert = UIAlertController(title: "title", message: "Message", preferredStyle: .alert)
+    alert.addTextField(configurationHandler: nil)
+    alert.addAction(UIAlertAction(title: "AlertActionSubmit", style: .cancel, handler: { _ in
+      guard let field = alert.textFields?.first, let text = field.text, !text.isEmpty else { return }
+      self.createItem(name: text)
+    }))
+    present(alert, animated: true)
   }
   
-  func readData() {
+  func getAllItems() {
     do {
-      let phoneBooks = try self.container.viewContext.fetch(PhoneBook.fetchRequest())
       
-      for phoneBook in phoneBooks as [NSManagedObject] {
-        if let name = phoneBook.value(forKey: PhoneBook.Key.name) as? String,
-           let phoneNumber = phoneBook.value(forKey: PhoneBook.Key.phoneNumber) {
-          print("name: \(name), phoneNumber: \(phoneNumber)")
-        }
+      models = try context.fetch(ToDoListItem.fetchRequest())
+      
+      DispatchQueue.main.async {
+        self.mainView.tableView.reloadData()
       }
     } catch {
-      print("실패")
+      
     }
   }
   
-  func updateData(currentName: String, udateName: String) {
-    let fetchRequest = PhoneBook.fetchRequest()
-    fetchRequest.predicate = NSPredicate(format: "name == %@", currentName)
+  func createItem(name: String) {
+    let newItem = ToDoListItem(context: context)
+    newItem.name = name
+    newItem.createDate = Date()
     
     do {
-      let result = try self.container.viewContext.fetch(fetchRequest)
-      
-      for data in result as [NSManagedObject] {
-        data.setValue(udateName, forKey: PhoneBook.Key.name)
-      }
-      
-      try self.container.viewContext.save()
-      
-      print("성공")
+      try context.save()
+      getAllItems()
     } catch {
-      print("실패")
+      
     }
   }
   
-  func deleteData(name: String) {
-    
-    let fetchRequest = PhoneBook.fetchRequest()
-    fetchRequest.predicate = NSPredicate(format: "name == %@", name)
+  func deleteItem(item: ToDoListItem) {
+    context.delete(item)
     
     do {
-      let result = try self.container.viewContext.fetch(fetchRequest)
-      
-      for i in result as [NSManagedObject] {
-        self.container.viewContext.delete(i)
-      }
-      try self.container.viewContext.save()
-      
-      print("데이터 삭제완료 ")
+      try context.save()
     } catch {
-      print("데이터 삭제 실패")
+      
     }
   }
+  
+  func updateItem(item: ToDoListItem, newName: String) {
+    item.name = newName
+    do {
+      try context.save()
+    } catch {
+      
+    }
+  }
+  
+  func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    return models.count
+  }
+  
+  func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    let cell = tableView.dequeueReusableCell(withIdentifier: tableViewCell.identifier, for: indexPath)
+    let model = models[indexPath.row]
+    var content = cell.defaultContentConfiguration()
+    content.text = model.name
+    content.secondaryText = "detail"
+    content.image = UIImage(systemName: "swift")
+    content.imageProperties.tintColor = .systemBlue
+    cell.contentConfiguration = content
+    
+    if let imageView = cell.contentView.subviews.compactMap({ $0 as? UIImageView }).first {
+      imageView.layer.cornerRadius = imageView.frame.size.width / 2
+      imageView.layer.masksToBounds = true
+      imageView.layer.borderWidth = 2
+      imageView.layer.borderColor = UIColor.black.cgColor
+    }
+    cell.accessoryType = .none
+    cell.selectionStyle = .blue
+    cell.backgroundColor = .lightGray
+    return cell
+  }
+  
+  func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    tableView.deselectRow(at: indexPath, animated: true)
+    
+    let sheet = UIAlertController(title: "Edit", message: nil, preferredStyle: .actionSheet)
+    sheet.addAction(UIAlertAction(title: "cancel", style: .cancel, handler: nil))
+    sheet.addAction(UIAlertAction(title: "Edit", style: .default, handler: nil))
+    sheet.addAction(UIAlertAction(title: "Delete", style: .destructive, handler: { _ in
+    }))
+    present(sheet, animated: true)
+  }
+  
 }
 
